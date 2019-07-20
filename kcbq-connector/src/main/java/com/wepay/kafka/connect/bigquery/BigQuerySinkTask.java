@@ -126,19 +126,8 @@ public class BigQuerySinkTask extends SinkTask {
     } catch (InterruptedException err) {
       throw new ConnectException("Interrupted while waiting for write tasks to complete.", err);
     }
-    updateOffsets(offsets);
 
     topicPartitionManager.resumeAll();
-  }
-
-  /**
-   * This really doesn't do much and I'm not totally clear on whether or not I need it.
-   * But, in the interest of maintaining old functionality, here we are.
-   */
-  private void updateOffsets(Map<TopicPartition, OffsetAndMetadata> offsets) {
-    for (Map.Entry<TopicPartition, OffsetAndMetadata> offsetEntry : offsets.entrySet()) {
-      context.offset(offsetEntry.getKey(), offsetEntry.getValue().offset());
-    }
   }
 
   private PartitionedTableId getRecordTable(SinkRecord record) {
@@ -200,6 +189,10 @@ public class BigQuerySinkTask extends SinkTask {
           TableWriterBuilder tableWriterBuilder;
           if (config.getList(config.ENABLE_BATCH_CONFIG).contains(record.topic())) {
             String gcsBlobName = record.topic() + "_" + uuid + "_" + Instant.now().toEpochMilli();
+            String gcsFolderName = config.getString(config.GCS_FOLDER_NAME_CONFIG);
+            if (gcsFolderName != null && !"".equals(gcsFolderName)) {
+              gcsBlobName = gcsFolderName + "/" + gcsBlobName;
+            }
             tableWriterBuilder = new GCSBatchTableWriter.Builder(
                 gcsToBQWriter,
                 table.getBaseTableId(),
@@ -344,7 +337,7 @@ public class BigQuerySinkTask extends SinkTask {
         try {
           logger.info("Attempting to shut down GCS Load Executor.");
           gcsLoadExecutor.shutdown();
-          executor.awaitTermination(EXECUTOR_SHUTDOWN_TIMEOUT_SEC, TimeUnit.SECONDS);
+          gcsLoadExecutor.awaitTermination(EXECUTOR_SHUTDOWN_TIMEOUT_SEC, TimeUnit.SECONDS);
         } catch (InterruptedException ex) {
           logger.warn("Could not shut down GCS Load Executor within {}s.",
                       EXECUTOR_SHUTDOWN_TIMEOUT_SEC);
