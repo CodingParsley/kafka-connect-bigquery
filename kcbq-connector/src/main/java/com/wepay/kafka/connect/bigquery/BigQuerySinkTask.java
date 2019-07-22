@@ -32,6 +32,8 @@ import com.wepay.kafka.connect.bigquery.config.BigQuerySinkTaskConfig;
 import com.wepay.kafka.connect.bigquery.convert.RecordConverter;
 import com.wepay.kafka.connect.bigquery.convert.SchemaConverter;
 import com.wepay.kafka.connect.bigquery.exception.SinkConfigConnectException;
+import com.wepay.kafka.connect.bigquery.preprocess.FieldNameSanitizer;
+import com.wepay.kafka.connect.bigquery.preprocess.SinkRecordFilter;
 import com.wepay.kafka.connect.bigquery.utils.PartitionedTableId;
 import com.wepay.kafka.connect.bigquery.utils.TopicToTableResolver;
 import com.wepay.kafka.connect.bigquery.utils.Version;
@@ -83,6 +85,7 @@ public class BigQuerySinkTask extends SinkTask {
   private boolean useMessageTimeDatePartitioning;
 
   private TopicPartitionManager topicPartitionManager;
+  private SinkRecordFilter sinkRecordFilter;
 
   private KCBQThreadPoolExecutor executor;
   private static final int EXECUTOR_SHUTDOWN_TIMEOUT_SEC = 30;
@@ -157,7 +160,12 @@ public class BigQuerySinkTask extends SinkTask {
   }
 
   private RowToInsert getRecordRow(SinkRecord record) {
-    return RowToInsert.of(getRowId(record), recordConverter.convertRecord(record));
+    Map convertedRecord = recordConverter.convertRecord(record);
+    if (config.getBoolean(config.SANITIZE_FIELD_NAME_CONFIG)) {
+      convertedRecord = FieldNameSanitizer.replaceInvalidKeys(convertedRecord);
+    }
+
+    return RowToInsert.of(getRowId(record), convertedRecord);
   }
 
   private String getRowId(SinkRecord record) {
@@ -175,6 +183,11 @@ public class BigQuerySinkTask extends SinkTask {
     Map<PartitionedTableId, TableWriterBuilder> tableWriterBuilders = new HashMap<>();
 
     for (SinkRecord record : records) {
+      if (sinkRecordFilter.getConfigType() != null) {
+        if (sinkRecordFilter.shouldSkip(record)) {
+          continue;
+        }
+      }
       if (record.value() != null) {
         PartitionedTableId table = getRecordTable(record);
         if (schemaRetriever != null) {
@@ -289,6 +302,7 @@ public class BigQuerySinkTask extends SinkTask {
       );
     }
 
+    sinkRecordFilter = new SinkRecordFilter(config);
     bigQueryWriter = getBigQueryWriter();
     gcsToBQWriter = getGcsWriter();
     topicsToBaseTableIds = TopicToTableResolver.getTopicsToTables(config);
