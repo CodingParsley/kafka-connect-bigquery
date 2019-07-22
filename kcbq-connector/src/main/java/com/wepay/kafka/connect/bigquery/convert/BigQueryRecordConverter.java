@@ -45,6 +45,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Class for converting from {@link SinkRecord SinkRecords} and BigQuery rows, which are represented
  * as {@link Map Maps} from {@link String Strings} to {@link Object Objects}.
@@ -52,6 +55,8 @@ import java.util.Set;
 public class BigQueryRecordConverter implements RecordConverter<Map<String, Object>> {
 
   private boolean shouldConvertSpecialDouble;
+  private static final Logger logger = LoggerFactory.getLogger(BigQueryRecordConverter.class);
+
 
   static {
     // force registration
@@ -72,10 +77,13 @@ public class BigQueryRecordConverter implements RecordConverter<Map<String, Obje
    * @return The result BigQuery row content.
    */
   public Map<String, Object> convertRecord(SinkRecord kafkaConnectRecord) {
+    if (kafkaConnectRecord.value() instanceof Map) {
+      return (Map)kafkaConnectRecord.value();
+    }
     Schema kafkaConnectSchema = kafkaConnectRecord.valueSchema();
     if (kafkaConnectSchema.type() != Schema.Type.STRUCT) {
       throw new
-          ConversionConnectException("Top-level Kafka Connect schema must be of type 'struct'");
+              ConversionConnectException("Top-level Kafka Connect schema must be of type 'struct'");
     }
     return convertStruct(kafkaConnectRecord.value(), kafkaConnectSchema);
   }
@@ -210,4 +218,5 @@ public class BigQueryRecordConverter implements RecordConverter<Map<String, Obje
     }
     return kafkaConnectDouble;
   }
+
 }
